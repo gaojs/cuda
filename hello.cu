@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cuda_runtime.h>
 
+
 // 使用__global__声明CUDA核函数
 __global__ void add(int *a,int *b,int *c)
 {
@@ -19,8 +20,8 @@ void random_ints(int *a,int size)
 const int N=512;
 const int M=8;
 
-int main()
-{
+void test_add() 
+{	
 	int *a,*b,*c;
 	int *da,*db,*dc;
 	int size = N*sizeof(int);
@@ -47,5 +48,51 @@ int main()
 	free(a);
 	free(b);
 	free(c);
+}
+
+__global__ void stencil_1d(int *in, int *out) 
+{
+	const int RADIUS=3;
+	const int BLOCK_SIZE=1;
+	__shared__ int temp[BLOCK_SIZE+2*RADIUS];
+	int gid = blockIdx.x * blockDim.x + threadIdx.x;
+	int lid = RADIUS + threadIdx.x;
+	temp[lid] = in[gid];
+	if(threadIdx.x<RADIUS) {
+		temp[lid-RADIUS] = in[gid-RADIUS];
+		temp[lid+RADIUS] = in[gid+RADIUS];
+	}
+	__syncthreads();
+	int res = 0;
+	for(int i=-RADIUS;i<=RADIUS;i++) {
+		res += temp[lid+i];
+	}
+	out[gid] = res;
+}
+
+void test_stencil_1d()
+{
+	int *in,*out;
+	int *da,*dout;
+	int size = N*sizeof(int);
+
+	cudaMalloc(&da,size);
+	cudaMalloc(&dout,size);
+	in=(int*)malloc(size);random_ints(in,N);
+	out=(int*)malloc(size);
+	cudaMemcpy(da,in,size,cudaMemcpyHostToDevice);
+	stencil_1d<<<N/M,M>>>(da,dout);
+	cudaMemcpy(out,dout,size,cudaMemcpyDeviceToHost);
+	std::cout << "out[0]=" << out[0] << std::endl;
+	free(in);
+	free(out);
+	cudaFree(da);
+	cudaFree(dout);
+}
+
+int main()
+{
+	// test_add();
+	test_stencil_1d();
 	return 0;
 }
